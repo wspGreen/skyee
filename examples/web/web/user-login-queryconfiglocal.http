@@ -1,0 +1,11 @@
+
+
+### 查询是否启用游客登陆
+POST http://127.0.0.1:1004/ClientPack?key=123 HTTP/1.1
+content-type: application/json
+
+{
+    "ConfigVersion": "default",
+    "GameID": "test",
+    "Head": 123
+}
