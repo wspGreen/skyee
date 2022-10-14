@@ -5,7 +5,7 @@ import (
 )
 
 type MsgCtrl struct {
-	state uint32
+	state uint32 // 0:无效 1:有效
 	mark  chan bool
 }
 
@@ -15,23 +15,26 @@ func NewMsgCtrl() *MsgCtrl {
 	}
 }
 
-func (c *MsgCtrl) EnableMarkState() {
-	// fmt.Println("Enable  ", c.mark)
+func (c *MsgCtrl) Disable() {
 	atomic.StoreUint32(&c.state, 0)
+	// fmt.Println("Disable state  ", c.state, c.mark)
+
 }
 
-func (c *MsgCtrl) CheckAndDisable() bool {
+// 尝试设置状态为有效
+func (c *MsgCtrl) trySetEnable() bool {
 	b := atomic.LoadUint32(&c.state) == 0 && atomic.CompareAndSwapUint32(&c.state, 0, 1)
-	// fmt.Println("CheckAndDisable  ", b, c.mark)
+	// fmt.Println("trySetEnable state ", c.state, b, c.mark)
 	return b
 }
 
-func (c *MsgCtrl) Mark() {
-	if c.CheckAndDisable() {
+// 让消息可以继续执行
+func (c *MsgCtrl) Enable() {
+	if c.trySetEnable() {
 		c.mark <- true
 	}
 }
 
-func (c *MsgCtrl) GetMark() chan bool {
+func (c *MsgCtrl) IsEnable() chan bool {
 	return c.mark
 }

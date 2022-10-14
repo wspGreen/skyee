@@ -1,0 +1,22 @@
+{
+    "test":{
+        "default":{
+            "ResServerPort":"22",
+            "OrderServerPort":"11",
+            "GameServerIP":"127.0.0.1",
+            "WeChatShareTitle":"推荐一款过节利器!",
+            "AccountServerIP":"789546",
+            "WeChatShareRoomDesc":"快来一起玩！只需5秒就能同桌玩【{游戏名}】",
+            "ResServerIP":"10.88.1.222",
+            "AccountType":"0",
+            "AccountServerPort":"999",
+            "WeChatMPAddress":"",
+            "OrderType":"9",
+            "ServerID":"10086",
+            "OrderServerIP":"127.0.0.1",
+            "MPID":"dph",
+            "QQQunLink":"",
+            "WeChatShareDesc":""
+        }
+    }
+}

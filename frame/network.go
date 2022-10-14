@@ -1,13 +1,14 @@
 package frame
 
 import (
-	"fmt"
+	"math"
 	"net/http"
 	"sync"
 	"sync/atomic"
 
 	"github.com/wspGreen/skyee/component"
-	"github.com/wspGreen/skyee/log"
+	"github.com/wspGreen/skyee/slog"
+	"github.com/wspGreen/skyee/snet"
 
 	"github.com/gorilla/websocket"
 )
@@ -24,7 +25,7 @@ type NetServerComp struct {
 }
 
 type Packet struct {
-	data []byte
+	Data []byte
 }
 
 func NewNetServerComp(addrtype string, addr string, ctxid uint32) *NetServerComp {
@@ -33,6 +34,8 @@ func NewNetServerComp(addrtype string, addr string, ctxid uint32) *NetServerComp
 		addrtype:  addrtype,
 		listener:  &http.Server{Addr: addr},
 		forwardid: ctxid,
+		lock:      &sync.RWMutex{},
+		sessions:  make(map[uint32]*Session),
 	}
 }
 
@@ -89,14 +92,14 @@ func (net *NetServerComp) startServer(addrtype string, addr string) error {
 		// msgque := newWsListen(naddr[0], url, MsgTypeCmd, handler, parser)
 		Go(func() {
 			// LogDebug("process listen for msgque:%d", msgque.id)
-			net.listenWS(addr)
+			net.listenWS()
 			// LogDebug("process listen end for msgque:%d", msgque.id)
 		})
 	}
 	if addrtype == "http" {
 
 		Go(func() {
-			net.listenHttp(addr)
+			net.listenHttp()
 		})
 	}
 	return nil
@@ -117,7 +120,7 @@ func cors(f http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-func (net *NetServerComp) listenHttp(url string) {
+func (net *NetServerComp) listenHttp() {
 	mx := http.NewServeMux()
 	mx.HandleFunc("/ClientPack", cors(func(w http.ResponseWriter, r *http.Request) {
 
@@ -126,46 +129,31 @@ func (net *NetServerComp) listenHttp(url string) {
 			return
 		}
 
-		log.Println(fmt.Sprintf("[Webd:%d] Request Url:%s", ctx.id, r.RequestURI))
+		// log.Println(fmt.Sprintf("[Webd:%d] Request Url:%s", ctx.id, r.RequestURI))
+		proto := ctx.GetProtoByType(PTYPE_SOCKET)
+		if proto == nil {
+			slog.Error("protoname is not exist : %v", PTYPE_SOCKET)
+			return
+		}
 
-		msg := &Msg{}
-		msg.Typename = "http"
-		msg.CMD = "OnClientRequest"
-		msg.Params = []interface{}{w, r}
+		// issue: http是否有必要用 proto.Pack
+		msg := NewSkyeeMsg(PTYPE_SOCKET, 0, 0, proto.Pack([]interface{}{"OnClientRequest", w, r}))
 		ctx.ac.Execute(msg)
 
 	}))
 	// http.ListenAndServe(":3002", mx)
 	net.listener.Handler = mx
 	Go(func() {
-		log.Println("start http server port ", net.addr)
-		net.listener.ListenAndServe()
+		slog.Info("start http server port %s", net.addr)
+		err := net.listener.ListenAndServe()
+		if err != nil {
+			slog.Error("%v", err)
+		}
 	})
-
-	// http.HandleFunc("/ClientPack", cors(func(w http.ResponseWriter, r *http.Request) {
-
-	// 	ctx := GetContext(net.forwardid)
-	// 	if ctx == nil {
-	// 		return
-	// 	}
-
-	// 	log.Println(fmt.Sprintf("[Webd:%d] Request Url:%s", ctx.id, r.RequestURI))
-
-	// 	msg := &Msg{}
-	// 	msg.Typename = "http"
-	// 	msg.CMD = "OnClientRequest"
-	// 	msg.Params = []interface{}{w, r}
-	// 	ctx.ac.Execute(msg)
-
-	// }))
-
-	// log.Println("start http server port ", net.addr)
-
-	// net.listener.ListenAndServe()
 
 }
 
-func (net *NetServerComp) listenWS(url string) {
+func (net *NetServerComp) listenWS() {
 	upgrader := &websocket.Upgrader{
 		ReadBufferSize:  1024,
 		WriteBufferSize: 1024,
@@ -174,74 +162,178 @@ func (net *NetServerComp) listenWS(url string) {
 		},
 	}
 
-	http.HandleFunc(url, func(hw http.ResponseWriter, hr *http.Request) {
+	http.HandleFunc("/", func(hw http.ResponseWriter, hr *http.Request) {
+		// defer func() {
+		// 	if err := recover(); err != nil {
+		// 		slog.Stack()
+		// 		slog.Error("error catch:%v", err)
+		// 	}
+		// }()
 		c, err := upgrader.Upgrade(hw, hr, nil)
 		if err != nil {
-			// if stop == 0 && r.stop == 0 {
-			log.Fatalf("accept failed  err:%v", err)
-			// }
+			if stop == 0 {
+				slog.Fatal("accept failed  err:%v", err)
+			} else {
+				slog.Error("accept failed  err:%v", err)
+			}
 		} else {
-			net.addSession(c)
+
+			s := net.addSession(c)
+			net.OnOpen(s)
+
 			Go(func() {
-				net.read(c)
+				s.read()
 			})
 
 			Go(func() {
-				net.write()
+				s.write()
 			})
 		}
 	})
 
-	net.listener.ListenAndServe()
+	Go(func() {
+		slog.Info("start ws server port %s", net.addr)
+		err := net.listener.ListenAndServe()
+		if err != nil {
+			slog.Fatal("%v", err)
+		}
+	})
 }
 
-func (net *NetServerComp) addSession(con *websocket.Conn) {
+func (net *NetServerComp) GetSession(id uint32) *Session {
+	net.lock.RLock()
+	s := net.sessions[id]
+	net.lock.RUnlock()
+	return s
+}
+
+func (net *NetServerComp) addSession(con *websocket.Conn) *Session {
 	if con == nil {
-		return
+		return nil
 	}
-	s := NewSession(con, net.GenSessionId())
+	s := NewSession(con, net.GenSessionId(), net)
 	net.lock.Lock()
 	net.sessions[s.id] = s
+	net.lock.Unlock()
+
+	return s
+}
+
+func (net *NetServerComp) delSession(id uint32) {
+	net.lock.Lock()
+	delete(net.sessions, id)
 	net.lock.Unlock()
 }
 
 func (net *NetServerComp) GenSessionId() uint32 {
+	if atomic.LoadUint32(&net.seedSessionId) == math.MaxUint32 {
+		atomic.StoreUint32(&net.seedSessionId, 0)
+	}
+
 	return atomic.AddUint32(&net.seedSessionId, 1)
 }
 
-func (net *NetServerComp) read(conn *websocket.Conn) {
-	for {
-		_, data, err := conn.ReadMessage()
-		if err != nil {
-			break
-		}
-		p := &Packet{data: data}
-		net.onNetData(p)
+// func (net *NetServerComp) read(s *Session) {
+// 	// buf := make([]byte, 2048)
+// 	// for {
+// 	// 	n, err := conn.Read(buf)
+// 	// 	if err != nil {
+// 	// 		// log.Println(fmt.Sprintf("Read message error: %s, session will be closed immediately", err.Error()))
+// 	// 		return
+// 	// 	}
+// 	// }
 
+// 	defer func() {
+// 		if err := recover(); err != nil {
+// 			// slog.Error("msgque read panic id:%v err:%v", r.id, err.(error))
+// 			slog.Stack()
+// 		}
+// 		// r.Stop()
+// 		// net.onStop(s)
+// 	}()
+
+// 	for {
+
+// 		_, data, err := s.conn.ReadMessage()
+// 		if err != nil {
+// 			break
+// 		}
+
+// 		// slog.Info("rev : %s", string(data))
+
+// 		net.onNetData(data)
+
+// 	}
+// }
+
+func (net *NetServerComp) OnOpen(s snet.ISession) {
+	slog.Info("new session : %d, addr :%s", s.Id(), s.GetRemoteAddr())
+
+	ctx := GetContext(net.forwardid)
+
+	cmd := "OnOpen"
+	if !ctx.ac.hasMethod(cmd) {
+		return
 	}
+
+	proto := ctx.GetProtoByType(PTYPE_SOCKET)
+	if proto == nil {
+		slog.Error("protoname is not exist : %v", PTYPE_SOCKET)
+		return
+	}
+	s = s.(*Session)
+	params := proto.Pack([]interface{}{cmd, s})
+
+	msg := NewSkyeeMsg(PTYPE_SOCKET, 0, 0, params)
+	ctx.GetActor().Send(msg)
 }
 
-func (net *NetServerComp) onNetData(p *Packet) {
-	// getContext(net.forwardid)
+func (net *NetServerComp) OnNetData(s snet.ISession, data []byte) {
 
+	ctx := GetContext(net.forwardid)
+	if ctx == nil {
+		slog.Error("not find context id %d", net.forwardid)
+		return
+	}
+	proto := ctx.GetProtoByType(PTYPE_SOCKET)
+	if proto == nil {
+		slog.Error("protoname is not exist : %v", PTYPE_SOCKET)
+		return
+	}
+
+	s = s.(*Session)
+	params := proto.Pack([]interface{}{"OnClientRequest", s, data})
+	msg := NewSkyeeMsg(PTYPE_SOCKET, 0, 0, params)
+	ctx.GetActor().Send(msg)
 	// gonode.Send("socket", "OnClientRequest")
 }
 
-func (net *NetServerComp) write() {
-	for {
-		defer func() {
-			if err := recover(); err != nil {
-				// base.TraceCode(err)
-			}
-		}()
+// 每个seesion关闭时调用
+func (net *NetServerComp) OnStop(s snet.ISession) {
 
-		// select {
-		// case buff := <-s.sendChan:
-		// 	if buff == nil { //信道关闭
-		// 		return false
-		// 	} else {
-		// 		s.DoSend(buff)
-		// 	}
-		// }
+	net.delSession(s.Id())
+	slog.Info("stop session : %d", s.Id())
+
+	// 通知绑定的actor关闭
+	ctx := GetContext(net.forwardid)
+
+	cmd := "OnStop"
+	if !ctx.ac.hasMethod(cmd) {
+		return
 	}
+
+	proto := ctx.GetProtoByType(PTYPE_SOCKET)
+	if proto == nil {
+		slog.Error("protoname is not exist : %v", PTYPE_SOCKET)
+		return
+	}
+	s = s.(*Session)
+	params := proto.Pack([]interface{}{cmd, s})
+
+	msg := NewSkyeeMsg(PTYPE_SOCKET, 0, 0, params)
+	ctx.GetActor().Send(msg)
+}
+
+func (net *NetServerComp) Stop() {
+
 }

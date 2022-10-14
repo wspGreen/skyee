@@ -3,9 +3,14 @@ package web
 import (
 	"encoding/json"
 	"io/ioutil"
+	"log"
 	"net/http"
 
-	"github.com/wspGreen/skyee/log"
+	"github.com/wspGreen/skyee"
+	"github.com/wspGreen/skyee/frame"
+	"github.com/wspGreen/skyee/iface"
+	"github.com/wspGreen/skyee/scontext"
+	"github.com/wspGreen/skyee/slog"
 )
 
 type ClientConfigData map[string]map[string]map[string]string
@@ -17,22 +22,6 @@ type ConfigRespone struct {
 }
 
 var allconfig ClientConfigData
-
-func init() {
-	bytes, err := ioutil.ReadFile("./config/AllClientConfig.txt")
-	if err != nil {
-		log.Fatal("读取json文件失败", err)
-		return
-	}
-	// c := &ConfigRespone{}
-	err = json.Unmarshal(bytes, &allconfig)
-	if err != nil {
-		log.Fatal("解析数据失败", err)
-		return
-	}
-
-	log.Println("Success Load ClientConfig:", allconfig)
-}
 
 type ConfigReq struct {
 	Ver    string `json:"ConfigVersion"`
@@ -47,6 +36,42 @@ type Webd struct {
 
 func NewWeb() *Webd {
 	return &Webd{}
+}
+
+func (d *Webd) Init(a iface.IActor) {
+	skyee.RegisterProtocol(a.GetId(), &scontext.Protocal{
+		Name: "socket",
+		Type: frame.PTYPE_SOCKET,
+		Pack: func(params []interface{}) (rawParams []interface{}) {
+			return params
+		},
+		UnPack: func(rawparams []interface{}) []interface{} {
+			return rawparams
+		},
+
+		F: func(session uint32, source uint32, cmd string, params []interface{}) []interface{} {
+			a.FunCall(cmd, params)
+			return nil
+		},
+	})
+
+	if allconfig != nil {
+		return
+	}
+
+	bytes, err := ioutil.ReadFile("./config/AllClientConfig.txt")
+	if err != nil {
+		slog.Fatal("读取json文件失败 %v", err)
+		return
+	}
+	// c := &ConfigRespone{}
+	err = json.Unmarshal(bytes, &allconfig)
+	if err != nil {
+		slog.Fatal("解析数据失败 %v", err)
+		return
+	}
+
+	slog.Info("Success Load ClientConfig:%v", allconfig)
 }
 
 func (d *Webd) OnServerMessage() {

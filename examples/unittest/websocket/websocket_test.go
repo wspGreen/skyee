@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/websocket"
+	"github.com/wspGreen/skyee/frame"
 )
 
 var upgrader = websocket.Upgrader{
@@ -35,7 +36,7 @@ func wsEndpoint(w http.ResponseWriter, r *http.Request) {
 	// 	log.Println(err)
 	// }
 
-	gonode.Go(func() {
+	frame.Go(func() {
 		reader(ws)
 
 	})

@@ -8,8 +8,8 @@ import (
 )
 
 type User struct {
-	userid int
-	name   string
+	Userid int
+	Name   string
 }
 
 func (u *User) Task0() int {
@@ -29,7 +29,7 @@ func Show1(data interface{}) {
 	fmt.Println("[data info] ")
 	t := reflect.TypeOf(data)
 	v := reflect.ValueOf(data)
-	fmt.Println("Type ", t)
+	fmt.Println("Type ", t) // *unittest_test.User
 	fmt.Println("Value ", v)
 	fmt.Println("Kind ", t.Kind())
 
@@ -83,9 +83,11 @@ func Show3(data interface{}) {
 
 func Start() {
 	user01 := &User{
-		userid: 123,
-		name:   "mark",
+		Userid: 123,
+		Name:   "mark",
 	}
+	// reflect.Struct
+	// fmt.Println("name ", reflect.TypeOf())
 	Show1(user01)
 	Show2(user01)
 	Show3(user01)
@@ -97,6 +99,26 @@ func Start() {
 	}()
 }
 
+func reflectNew() {
+
+	createObj((*User)(nil))
+}
+
+func createObj(u interface{}) *User {
+	typ := reflect.TypeOf(u)
+	if typ.Kind() == reflect.Ptr { //指针类型获取真正type需要调用Elem
+		typ = typ.Elem()
+	}
+	fVal := reflect.New(typ)
+	fVal.Elem().Field(0).SetInt(20)
+	fVal.Elem().Field(1).SetString("Number")
+	user := fVal.Elem().Interface().(User)
+	fmt.Printf("userid:%v name:%v \n", user.Userid, user.Name)
+	return &user
+}
+
 func TestRef(t *testing.T) {
-	Start()
+	// Start()
+	reflectNew()
+
 }
