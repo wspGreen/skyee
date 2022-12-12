@@ -29,13 +29,14 @@ type ConfigReq struct {
 	Head   int    `json:"Head"`
 }
 
-var Web = NewWeb()
-
 type Webd struct {
+	a int
 }
 
+var Web = NewWeb()
+
 func NewWeb() *Webd {
-	return &Webd{}
+	return &Webd{a: 0}
 }
 
 func (d *Webd) Init(a iface.IActor) {
@@ -54,6 +55,16 @@ func (d *Webd) Init(a iface.IActor) {
 			return nil
 		},
 	})
+
+	// skyee.Dispatch(
+	// 	a.GetId(),
+	// 	"cmd",
+	// 	func(session uint32, source uint32, cmd string, params []interface{}) []interface{} {
+	// 		ret := a.FunCall(cmd, params)
+
+	// 		return skyee.Ret(ret)
+	// 	},
+	// )
 
 	if allconfig != nil {
 		return

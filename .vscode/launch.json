@@ -25,7 +25,7 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "cwd":"${workspaceFolder}\\examples\\bin",
+            "cwd":"${workspaceFolder}\\examples\\web\\web",
             "program": "${workspaceFolder}\\examples\\web\\main.go",
             "args":[]
         }

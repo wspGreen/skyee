@@ -98,7 +98,7 @@ func (g *Gate) requestHandler(username string, s *frame.Session, p *frame.Packet
 /*
 	两种情况收到：
 	1. 其他服务发给gate的包，在gate处理 (包来源 nats )
-	2. 其他服务让gate转发client的包，只需转发给client （包来源client）
+	2. 其他服务让gate转发client的包，只需转发给client （包来源其他服务）
 */
 func (g *Gate) OnServerMessage(pid string, data []byte) {
 	// slog.Info(" send OnServerMessage ok! ")

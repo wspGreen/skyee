@@ -138,6 +138,7 @@ func (net *NetServerComp) listenHttp() {
 
 		// issue: http是否有必要用 proto.Pack
 		msg := NewSkyeeMsg(PTYPE_SOCKET, 0, 0, proto.Pack([]interface{}{"OnClientRequest", w, r}))
+		// ctx.GetActor().Send(msg)
 		ctx.ac.Execute(msg)
 
 	}))
